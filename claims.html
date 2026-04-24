@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Réclamations — MaliPay</title>
+
+<style>
+body { margin:0; font-family:Segoe UI; color:#111; }
+#bg-video { position:fixed; inset:0; width:100%; height:100%; object-fit:cover; z-index:-2; filter:brightness(0.85); }
+body::before { content:""; position:fixed; inset:0; background:linear-gradient(135deg, rgba(255,140,0,0.35), rgba(255,90,0,0.25)); z-index:-1; }
+
+header { text-align:center; font-size:26px; padding:18px; color:#ff9a00; font-weight:bold; }
+
+.card {
+  max-width:900px;
+  margin:18px auto;
+  background:rgba(255,255,255,0.9);
+  padding:18px;
+  border-radius:18px;
+  box-shadow:0 15px 35px rgba(0,0,0,0.35);
+}
+
+.user-card {
+  background:white;
+  padding:14px;
+  border-radius:14px;
+  margin-top:12px;
+}
+
+button {
+  width:100%;
+  padding:12px;
+  border-radius:12px;
+  border:none;
+  background:linear-gradient(45deg,#ff9a00,#ff6a00);
+  color:white;
+  margin-top:8px;
+  font-weight:bold;
+  cursor:pointer;
+}
+
+.empty { text-align:center; font-weight:bold; color:#64748b; }
+</style>
+</head>
+
+<body>
+
+<video autoplay muted loop id="bg-video">
+<source src="bg-admin.mp4">
+</video>
+
+<header>🚨 Réclamations</header>
+
+<div class="card">
+<div id="claimList"></div>
+</div>
+
+<div class="card">
+<button onclick="location.href='admin.html'">⬅ Retour</button>
+</div>
+
+<script type="module">
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
+import { getDatabase, ref, get, update, push, remove } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js";
+
+const app = initializeApp({
+databaseURL:"https://ma-money5-default-rtdb.firebaseio.com"
+});
+
+const db = getDatabase(app);
+const claimList = document.getElementById("claimList");
+
+async function loadClaims(){
+
+const claimsSnap = await get(ref(db,"serviceClaims"));
+const claims = claimsSnap.val() || {};
+
+claimList.innerHTML="";
+let hasClaims=false;
+
+for(const [claimKey,c] of Object.entries(claims)){
+
+if(c.status==="resolved") continue;
+
+const historySnap = await get(ref(db,"history/"+c.txId));
+const h = historySnap.val();
+if(!h) continue;
+
+hasClaims=true;
+
+claimList.innerHTML += `
+<div class="user-card">
+🆔 Transaction ID : <b>${c.txId}</b><br>
+📤 Expéditeur : ${h.from}<br>
+📥 Destinataire : ${h.to}<br>
+💰 Montant envoyé : <b>${h.amountOriginal}</b><br>
+💱 Montant reçu : <b>${h.amountConverted}</b><br>
+📝 Raison : ${h.reason || "—"}<br>
+🕒 Date : ${h.date}<br>
+
+<button onclick="resolveClaim('${c.txId}','${claimKey}')">
+✔ Résoudre & Annuler transaction
+</button>
+</div>`;
+}
+
+if(!hasClaims){
+claimList.innerHTML=`<div class="empty">✅ Aucune réclamation active</div>`;
+}
+
+}
+
+window.resolveClaim = async (historyKey, claimKey) => {
+
+const historySnap = await get(ref(db,"history/"+historyKey));
+const h = historySnap.val();
+if(!h) return alert("❌ Transaction introuvable");
+if(h.cancelled) return alert("⚠ Déjà annulée");
+
+const senderSnap = await get(ref(db,"users/"+h.from));
+const receiverSnap = await get(ref(db,"users/"+h.to));
+const treasurySnap = await get(ref(db,"treasury"));
+
+let sender = senderSnap.val();
+let receiver = receiverSnap.val();
+let treasury = treasurySnap.val();
+
+if(!sender || !receiver) return alert("❌ Comptes introuvables");
+
+/* Remboursement multi-devise */
+
+if(receiver.solde < h.amountConverted){
+return alert("❌ Solde destinataire insuffisant");
+}
+
+receiver.solde -= h.amountConverted;
+sender.solde += h.amountOriginal;
+treasury.balance -= h.fee;
+
+/* Mise à jour */
+
+await update(ref(db,"users/"+h.from), sender);
+await update(ref(db,"users/"+h.to), receiver);
+await update(ref(db,"treasury"), treasury);
+
+await update(ref(db,"history/"+historyKey), {
+cancelled:true,
+status:"Annulée après réclamation"
+});
+
+await update(ref(db,"serviceClaims/"+claimKey), {
+status:"resolved",
+resolvedAt:Date.now()
+});
+
+/* Notification remboursement */
+
+await push(ref(db,"notifications/"+h.from),{
+title:"💸 Transaction annulée",
+amount:h.amountOriginal,
+phone:h.to,
+date:new Date().toLocaleString()
+});
+
+alert("✅ Transaction annulée + remboursement effectué !");
+loadClaims();
+};
+
+loadClaims();
+
+</script>
+</body>
+</html>

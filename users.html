@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Admin Utilisateurs — MaliPay</title>
+
+<link rel="stylesheet"
+href="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.19/css/intlTelInput.css"/>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.19/js/intlTelInput.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+body { margin:0; font-family:Segoe UI, sans-serif; background:#fff7ee; }
+header { text-align:center; padding:18px; font-size:26px; font-weight:bold; color:#ff7a00; }
+.card { max-width:1100px; margin:16px auto; background:white; padding:18px;
+border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,0.1); }
+input { width:100%; padding:10px; border-radius:10px; border:1px solid #ccc; margin-top:8px; }
+button { padding:10px; border-radius:10px; border:none;
+background:linear-gradient(45deg,#ff9a00,#ff6a00);
+color:white; font-weight:bold; cursor:pointer; margin-top:8px; }
+button:hover { transform:scale(1.03); }
+.danger { background:crimson; }
+.success { background:#16a34a; }
+.gray { background:#64748b; }
+table { width:100%; border-collapse:collapse; margin-top:10px; }
+th, td { padding:10px; border-bottom:1px solid #eee; text-align:left; }
+th { background:#fff2e0; color:#ff7a00; }
+.status-active { color:#16a34a; font-weight:bold; }
+.status-frozen { color:crimson; font-weight:bold; }
+.avatar { width:40px; height:40px; border-radius:50%; object-fit:cover; }
+.hidden { display:none; }
+small { color:gray; }
+</style>
+</head>
+
+<body>
+
+<header>👥 MaliPay — Gestion Utilisateurs</header>
+
+<div class="card">
+<input id="searchUser" placeholder="🔎 Rechercher par numéro..." oninput="loadUsers()">
+</div>
+
+<div class="card">
+<h3>➕ Ajouter un utilisateur</h3>
+
+<input id="newName" placeholder="Nom complet">
+<input id="newDob" type="date" placeholder="Date de naissance">
+<input id="newBirthPlace" placeholder="Lieu de naissance">
+<input id="newNationality" placeholder="Nationalité">
+<input id="newIdCard" placeholder="Numéro carte identité / NINA">
+<input id="newPhone" placeholder="Numéro téléphone">
+<p id="countryInfo"></p>
+<input id="newPass" placeholder="Mot de passe">
+<input id="newSolde" type="number" placeholder="Solde initial">
+<h4>📸 Photo utilisateur (obligatoire)</h4>
+
+<input type="file" id="photoFile" accept="image/*">
+
+<button type="button" onclick="openCamera()">📷 Prendre photo</button>
+
+<video id="camera" class="hidden" autoplay></video>
+<canvas id="canvas" class="hidden"></canvas>
+
+<img id="previewPhoto" class="avatar hidden">
+
+<button onclick="addUser()">Créer utilisateur</button>
+<p id="addMsg"></p>
+</div>
+
+<div class="card">
+<h3>📋 Liste des utilisateurs</h3>
+<button id="toggleBtn" class="gray" onclick="toggleUserList(); loadUsers();">👁 Afficher la liste</button>
+
+<div id="userBox" class="hidden">
+<table>
+<thead>
+<tr>
+<th>Photo</th>
+<th>Nom</th>
+<th>Numéro</th>
+<th>Solde Local</th>
+<th>Solde XOF</th>
+<th>Statut</th>
+<th>Dépôt</th>
+<th>Retrait</th>
+<th>Sécurité</th>
+<th>PDF</th>
+<th>Actions</th>
+</tr>
+</thead>
+<tbody id="userTable"></tbody>
+</table>
+</div>
+</div>
+
+<div class="card">
+<button onclick="location.href='admin.html'">⬅ Retour</button>
+</div>
+
+<script type="module">
+
+import { initializeApp } from
+"https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
+
+import { getDatabase, ref, get, set, update, remove }
+from "https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js";
+
+import { getStorage, ref as sRef, uploadBytes, getDownloadURL }
+from "https://www.gstatic.com/firebasejs/12.12.1/firebase-storage.js";
+
+// 🔥 CONFIG COMPLETE
+const firebaseConfig = {
+  apiKey: "AIzaSyB2cVumUWZ_cDUC-kd7FUpUaXEODB1CCNE",
+  authDomain: "ma-money5.firebaseapp.com",
+  databaseURL: "https://ma-money5-default-rtdb.firebaseio.com",
+  projectId: "ma-money5",
+  storageBucket: "ma-money5.firebasestorage.app", // ✅ TRÈS IMPORTANT
+  appId: "1:730105139852:web:0dbdca815a359a7b0d61a9" // (optionnel mais propre)
+};
+
+// 🚀 INITIALISATION
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+const storage = getStorage(app);
+
+// 📸 variable globale image
+let selectedFile = null;
+
+// 📂 IMPORT IMAGE
+document.getElementById("photoFile").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+
+  if (!file) return;
+
+  selectedFile = file;
+
+  // preview
+  const preview = document.getElementById("previewPhoto");
+  preview.src = URL.createObjectURL(file);
+  preview.classList.remove("hidden");
+});
+
+// 📷 CAMERA
+window.openCamera = async function () {
+  const video = document.getElementById("camera");
+  video.classList.remove("hidden");
+
+  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  video.srcObject = stream;
+
+  setTimeout(() => {
+    const canvas = document.getElementById("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0);
+
+    canvas.toBlob(blob => {
+      selectedFile = new File([blob], "camera.jpg", { type: "image/jpeg" });
+
+      const preview = document.getElementById("previewPhoto");
+      preview.src = URL.createObjectURL(blob);
+      preview.classList.remove("hidden");
+
+      stream.getTracks().forEach(t => t.stop());
+      video.classList.add("hidden");
+    });
+  }, 2000);
+};
+
+const table = document.getElementById("userTable");
+const userBox = document.getElementById("userBox");
+const toggleBtn = document.getElementById("toggleBtn");
+
+const phoneInput = document.querySelector("#newPhone");
+const countryInfo = document.getElementById("countryInfo");
+const iti = window.intlTelInput(phoneInput,{
+initialCountry:"ml",
+separateDialCode:true,
+utilsScript:"https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.19/js/utils.js"
+});
+
+phoneInput.addEventListener("countrychange",()=>{
+const c = iti.getSelectedCountryData();
+countryInfo.innerText = "Pays : "+c.name+" (+"+c.dialCode+")";
+});
+
+const currencyMap = {
+"+223":"XOF",
+"+33":"EUR",
+"+1515":"USD",
+"+1514":"CAD",
+"+226":"XOF",
+"++227":"XOF",
+"+86":"SNY"
+};
+
+const rateToXOF = {
+"XOF":1,
+"EUR":655.96,
+"USD":558,
+"SNY":83,
+"CAD":408.05
+};
+
+function detectCurrency(phone){
+for(const code in currencyMap){
+if(phone.startsWith(code)) return currencyMap[code];
+}
+return "XOF";
+}
+
+window.toggleUserList = ()=>{
+userBox.classList.toggle("hidden");
+
+if(!userBox.classList.contains("hidden")){
+loadUsers();
+}
+
+toggleBtn.innerText = userBox.classList.contains("hidden")
+? "👁 Afficher la liste"
+: "🙈 Masquer la liste";
+};
+
+window.loadUsers = async () => {
+
+const search = document.getElementById("searchUser").value.trim();
+
+const snap = await get(ref(db,"users"));
+
+if(!snap.exists()){
+table.innerHTML = "<tr><td colspan='11'>Aucun utilisateur</td></tr>";
+return;
+}
+
+table.innerHTML = "";
+
+snap.forEach(child => {
+
+const u = child.val();
+const phone = child.key;
+
+if(search && !phone.includes(search)) return;
+
+const currency = u.currency || "XOF";
+const solde = u.solde ?? 0;
+const soldeXOF = solde * (rateToXOF[currency] || 1);
+
+table.innerHTML += `
+<tr>
+<td><img src="${u.photo || 'https://i.imgur.com/6VBx3io.png'}" class="avatar"></td>
+<td>${u.name || "-"}</td>
+<td>${phone}</td>
+<td>${solde} ${currency}</td>
+<td>${soldeXOF.toFixed(2)} XOF</td>
+<td class="${u.frozen ? "status-frozen" : "status-active"}">
+${u.frozen ? "Gelé" : "Actif"}
+</td>
+
+<td><button onclick="deposit('${phone}')">➕</button></td>
+
+<td><button onclick="withdraw('${phone}')">➖</button></td>
+
+<td>
+<button onclick="toggleFreeze('${phone}')" class="gray">
+${u.frozen ? "Dégeler" : "Geler"}
+</button>
+<button onclick="resetPassword('${phone}')">🔐</button>
+</td>
+
+<td><button onclick="generatePDF('${phone}')">📄</button></td>
+
+<td><button onclick="deleteUser('${phone}')" class="danger">🗑</button></td>
+
+</tr>`;
+});
+
+};
+
+window.deposit = async phone=>{
+const amount = parseFloat(prompt("Montant dépôt :"));
+if(isNaN(amount)||amount<=0) return;
+const snap = await get(ref(db,"users/"+phone));
+let u = snap.val();
+u.solde=(u.solde||0)+amount;
+await update(ref(db,"users/"+phone),{solde:u.solde});
+loadUsers();
+};
+
+window.withdraw = async phone=>{
+const amount=parseFloat(prompt("Montant retrait :"));
+if(isNaN(amount)||amount<=0) return;
+const snap=await get(ref(db,"users/"+phone));
+let u=snap.val();
+if(amount>u.solde){alert("❌ Solde insuffisant !");return;}
+u.solde-=amount;
+await update(ref(db,"users/"+phone),{solde:u.solde});
+loadUsers();
+};
+
+window.toggleFreeze=async phone=>{
+const snap=await get(ref(db,"users/"+phone));
+let u=snap.val();
+u.frozen=!u.frozen;
+await update(ref(db,"users/"+phone),{frozen:u.frozen});
+loadUsers();
+};
+
+window.resetPassword=async phone=>{
+const pass=prompt("Nouveau mot de passe :");
+if(!pass||pass.length<4) return;
+await update(ref(db,"users/"+phone),{password:pass});
+alert("Mot de passe modifié");
+};
+
+window.deleteUser=async phone=>{
+if(confirm("Supprimer cet utilisateur ?")){
+await remove(ref(db,"users/"+phone));
+loadUsers();
+}
+};
+
+window.addUser = async () => {
+  try {
+    const name = newName.value.trim();
+    const dob = newDob.value;
+    const birthPlace = newBirthPlace.value.trim();
+    const nationality = newNationality.value.trim();
+    const idCard = newIdCard.value.trim();
+    const phone = iti.getNumber();
+    const password = newPass.value.trim();
+    const solde = parseFloat(newSolde.value);
+    const msg = addMsg;
+
+    // ✅ Vérification champs
+    if (!name || !phone || !password || isNaN(solde)) {
+      msg.innerText = "❌ Remplis tous les champs";
+      return;
+    }
+
+    if (!selectedFile) {
+      msg.innerText = "❌ Ajoute une photo";
+      return;
+    }
+
+    msg.innerText = "⏳ Création en cours...";
+
+    // ✅ Vérifie si existe
+    const exists = await get(ref(db, "users/" + phone));
+    if (exists.exists()) {
+      msg.innerText = "❌ Numéro déjà utilisé";
+      return;
+    }
+
+    const currency = detectCurrency(phone);
+
+
+    // 🔥 Upload image
+    const storageRef = sRef(storage, "users/" + phone + "_" + selectedFile.name);
+    await uploadBytes(storageRef, selectedFile);
+
+    const photoURL = await getDownloadURL(storageRef);
+
+    // 🔥 Enregistrer utilisateur
+    await set(ref(db, "users/" + phone), {
+      name,
+      dob,
+      birthPlace,
+      nationality,
+      idCard,
+      phone,
+      password,
+      solde,
+      currency,
+      photo: photoURL,
+      frozen: false,
+      createdAt: new Date().toLocaleString()
+    });
+
+    // ✅ Succès
+    msg.innerText = "✅ Utilisateur ajouté";
+
+    // 🔄 Reset
+    document.querySelectorAll(".card input").forEach(i => i.value = "");
+    countryInfo.innerText = "";
+    selectedFile = null;
+
+    document.getElementById("previewPhoto").classList.add("hidden");
+
+    loadUsers();
+
+  } catch (error) {
+    console.error(error);
+    addMsg.innerText = "❌ Erreur: " + error.message;
+  }
+};
+
+</script>
+</body>
+</html>
