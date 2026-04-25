@@ -218,6 +218,21 @@ userData.solde += amount;
 
 await update(userRef,userData);
 await update(agentRef,agentData);
+await push(ref(db,"notifications/"+scannedUser),{
+title:"💰 Dépôt reçu",
+phone: agent.phone,
+amount: amount,
+date: new Date().toLocaleString(),
+seen:false
+});
+
+await push(ref(db,"notifications/"+agent.phone),{
+title:"📤 Dépôt effectué",
+phone: scannedUser,
+amount: amount,
+date: new Date().toLocaleString(),
+seen:false
+});
 
 alert("✅ Dépôt réussi");
 loadAgentBalance();
