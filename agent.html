@@ -90,7 +90,11 @@ transform:scale(1.05);
 
 <div class="title">📷 Scanner QR</div>
 
-<div id="reader"></div>
+<div id="agentBalance" style="margin-bottom:15px;font-weight:bold;"></div>
+
+<button onclick="toggleScanner()" id="scanBtn">📷 Ouvrir Scanner</button>
+
+<div id="reader" style="display:none;"></div>
 
 <div id="result"></div>
 
@@ -121,25 +125,65 @@ alert("Accès refusé");
 window.location.href="login.html";
 }
 
+async function loadAgentBalance(){
+
+const snap = await get(ref(db,"agents/"+agent.phone));
+
+if(snap.exists()){
+const data = snap.val();
+document.getElementById("agentBalance").innerText =
+"💼 Solde : " + Number(data.solde).toLocaleString() + " FCFA";
+}
+}
+
+loadAgentBalance();
+
 /* ===== QR SCAN ===== */
 let scannedUser = null;
+let scannerRunning = false;
+let html5QrCode = null;
 
 function onScanSuccess(decodedText){
 document.getElementById("result").innerText = "📱 "+decodedText;
 scannedUser = decodedText;
 }
 
-const html5QrCode = new Html5Qrcode("reader");
+window.toggleScanner = async function(){
 
-Html5Qrcode.getCameras().then(devices => {
-if(devices.length){
-html5QrCode.start(
-devices[0].id,
+const reader = document.getElementById("reader");
+const btn = document.getElementById("scanBtn");
+
+if(!scannerRunning){
+
+reader.style.display = "block";
+btn.innerText = "❌ Fermer Scanner";
+
+html5QrCode = new Html5Qrcode("reader");
+
+/* 🔥 caméra arrière */
+const cameras = await Html5Qrcode.getCameras();
+
+let backCamera = cameras.find(c =>
+c.label.toLowerCase().includes("back")
+) || cameras[0];
+
+await html5QrCode.start(
+backCamera.id,
 { fps: 10, qrbox: 250 },
 onScanSuccess
 );
+
+scannerRunning = true;
+
+}else{
+
+await html5QrCode.stop();
+reader.style.display = "none";
+btn.innerText = "📷 Ouvrir Scanner";
+
+scannerRunning = false;
 }
-});
+};
 
 /* ===== DEPOT ===== */
 window.startDeposit = async function(){
@@ -176,6 +220,7 @@ await update(userRef,userData);
 await update(agentRef,agentData);
 
 alert("✅ Dépôt réussi");
+loadAgentBalance();
 };
 
 /* ===== RETRAIT ===== */
@@ -213,6 +258,7 @@ await update(userRef,userData);
 await update(agentRef,agentData);
 
 alert("✅ Retrait réussi");
+loadAgentBalance();
 };
 </script>
 
