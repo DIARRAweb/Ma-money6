@@ -1821,16 +1821,18 @@ const data = snapshot.val();
 for(const id in data){
 
 const req = data[id];
+
 console.log("REQ =", req);
 
+/* 🔥 ignorer si déjà traité */
 if(req.status !== "pending") continue;
 
-/* 🔥 éviter double exécution */
+/* 🔥 bloquer double traitement */
 await update(ref(db,"withdrawRequests/"+currentUser.phone+"/"+id),{
 status:"processing"
 });
 
-/* 🔐 CONFIRMATION */
+/* 🔐 DEMANDE MOT DE PASSE */
 const pass = prompt(
 `💸 Demande de retrait
 Montant : ${req.amount} FCFA
@@ -1838,46 +1840,59 @@ Frais : 0 FCFA
 Entrez votre mot de passe`
 );
 
+/* ❌ utilisateur annule */
 if(!pass){
 await update(ref(db,"withdrawRequests/"+currentUser.phone+"/"+id),{
 status:"pending"
 });
-return;
+continue;
 }
 
+/* 🔍 récupérer user */
 const userSnap = await get(ref(db,"users/"+currentUser.phone));
-const user = userSnap.val();
 
+if(!userSnap.exists()){
+alert("❌ Utilisateur introuvable");
+continue;
+}
+
+let user = userSnap.val();
+
+/* ❌ mauvais mot de passe */
 if(user.password !== pass){
 alert("❌ Mot de passe incorrect");
 
 await update(ref(db,"withdrawRequests/"+currentUser.phone+"/"+id),{
 status:"pending"
 });
-return;
+
+continue;
 }
 
+/* ❌ solde insuffisant */
 if(user.solde < req.amount){
 alert("❌ Solde insuffisant");
 
 await update(ref(db,"withdrawRequests/"+currentUser.phone+"/"+id),{
 status:"pending"
 });
-return;
+
+continue;
 }
 
-/* ===== TRANSFERT ===== */
-if(!req.fromAgent){
+/* ❌ agent manquant */
+if(!req.agent){
 alert("❌ Agent introuvable");
-return;
+continue;
 }
 
-const agentRef = ref(db,"agents/"+req.fromAgent);
+/* 🔍 récupérer agent */
+const agentRef = ref(db,"agents/"+req.agent);
 const agentSnap = await get(agentRef);
 
 if(!agentSnap.exists()){
 alert("❌ Agent inexistant");
-return;
+continue;
 }
 
 let agentData = agentSnap.val();
@@ -1885,29 +1900,53 @@ let agentData = agentSnap.val();
 /* 🔥 conversion propre */
 const amount = Number(req.amount);
 
+/* ===== TRANSFERT ===== */
 user.solde -= amount;
 agentData.solde += amount;
 
-/* 🔥 update */
-await update(ref(db,"users/"+currentUser.phone), {
+/* ===== UPDATE ===== */
+await update(ref(db,"users/"+currentUser.phone),{
 ...user,
-solde: user.solde
+solde:user.solde
 });
 
-await update(agentRef, {
+await update(agentRef,{
 ...agentData,
-solde: agentData.solde
+solde:agentData.solde
 });
 
-/* ===== SUPPRIMER DEMANDE (IMPORTANT) ===== */
+/* ===== NOTIFICATIONS ===== */
+
+/* utilisateur */
+await push(ref(db,"notifications/"+currentUser.phone),{
+title:"💸 Retrait effectué",
+phone:req.agent,
+amount:amount,
+date:new Date().toLocaleString(),
+seen:false
+});
+
+/* agent */
+await push(ref(db,"notifications/"+req.agent),{
+title:"💰 Retrait reçu",
+phone:currentUser.phone,
+amount:amount,
+date:new Date().toLocaleString(),
+seen:false
+});
+
+/* ===== SUPPRESSION DEMANDE ===== */
 await remove(ref(db,"withdrawRequests/"+currentUser.phone+"/"+id));
 
 alert("✅ Retrait confirmé");
 
+/* 🔄 refresh UI */
 loadBalance();
 
 }
+
 });
+
 }
 </script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
