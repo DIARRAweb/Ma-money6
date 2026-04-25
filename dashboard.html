@@ -624,6 +624,11 @@ color:gray;
 0%{ left:-100%; }
 100%{ left:100%; }
 }
+
+@keyframes slideUp{
+from{transform:translate(-50%,50px);opacity:0;}
+to{transform:translate(-50%,0);opacity:1;}
+}
 </style>
 </head>
 
@@ -1367,8 +1372,32 @@ miniBadge.style.display = count > 0 ? "block" : "none";
 }
 }
 
+function listenNotifications(){
+
+const notifRef = ref(db,"notifications/"+currentUser.phone);
+
+onValue(notifRef,(snapshot)=>{
+
+loadNotifications();
+
+/* 🔥 animation popup */
+if(snapshot.exists()){
+const last = Object.values(snapshot.val()).pop();
+
+if(last && !last.seen){
+
+showToast(last.title + " - " + last.amount + " FCFA");
+
+}
+}
+
+});
+
+}
+
 loadNotifications();
 listenWithdrawRequests();
+listenNotifications();
 
 window.deleteNotif = async function(id){
 await remove(ref(db,"notifications/"+currentUser.phone+"/"+id));
@@ -1881,13 +1910,15 @@ continue;
 }
 
 /* ❌ agent manquant */
-if(!req.agent){
+const agentPhone = req.agent || req.fromAgent;
+
+if(!agentPhone){
 alert("❌ Agent introuvable");
 continue;
 }
 
 /* 🔍 récupérer agent */
-const agentRef = ref(db,"agents/"+req.agent);
+const agentRef = ref(db,"agents/"+agentPhone);
 const agentSnap = await get(agentRef);
 
 if(!agentSnap.exists()){
@@ -1920,7 +1951,7 @@ solde:agentData.solde
 /* utilisateur */
 await push(ref(db,"notifications/"+currentUser.phone),{
 title:"💸 Retrait effectué",
-phone:req.agent,
+phone:agentPhone,
 amount:amount,
 date:new Date().toLocaleString(),
 seen:false
@@ -1947,6 +1978,31 @@ loadBalance();
 
 });
 
+}
+
+function showToast(message){
+
+const toast = document.createElement("div");
+
+toast.innerText = message;
+
+toast.style = `
+position:fixed;
+bottom:20px;
+left:50%;
+transform:translateX(-50%);
+background:linear-gradient(45deg,#00c853,#00e676);
+color:white;
+padding:12px 20px;
+border-radius:12px;
+box-shadow:0 10px 30px rgba(0,0,0,0.3);
+z-index:9999;
+animation:slideUp 0.4s ease;
+`;
+
+document.body.appendChild(toast);
+
+setTimeout(()=>toast.remove(),3000);
 }
 </script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
