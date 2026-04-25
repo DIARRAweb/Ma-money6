@@ -249,17 +249,16 @@ window.location.href = "admin.html";
 return;
 }
 
-/* UTILISATEUR NORMAL */
+/* =========================
+👤 UTILISATEUR OU AGENT
+========================= */
 
+/* 1️⃣ Vérifier USER */
 const userRef = ref(db, "users/" + phone);
-const snap = await get(userRef);
+const userSnap = await get(userRef);
 
-if(!snap.exists()){
-error.innerText = "❌ Numéro introuvable";
-return;
-}
-
-const user = snap.val();
+if(userSnap.exists()){
+const user = userSnap.val();
 
 if(user.password !== password){
 error.innerText = "❌ Mot de passe incorrect";
@@ -272,6 +271,30 @@ window.location.href =
 user.role === "admin"
 ? "admin.html"
 : "dashboard.html";
+
+return;
+}
+
+/* 2️⃣ Vérifier AGENT */
+const agentRef = ref(db, "agents/" + phone);
+const agentSnap = await get(agentRef);
+
+if(agentSnap.exists()){
+const agent = agentSnap.val();
+
+if(agent.password !== password){
+error.innerText = "❌ Mot de passe incorrect";
+return;
+}
+
+localStorage.setItem("loggedAgent", JSON.stringify(agent));
+
+window.location.href = "agent.html";
+return;
+}
+
+/* 3️⃣ Aucun trouvé */
+error.innerText = "❌ Compte introuvable";
 
 } catch {
 error.innerText = "❌ Erreur Firebase";
