@@ -820,7 +820,7 @@ Envoyer
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
-import { getDatabase, ref, get, update, push, remove } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js";
+import { getDatabase, ref, get, update, push, remove, onValue } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js";
 import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-storage.js";
 const firebaseConfig = {
   apiKey: "AIzaSyB2cVumUWZ_cDUC-kd7FUpUaXEODB1CCNE",
@@ -1778,45 +1778,64 @@ currentUser.phone,
 
 };
 
-async function listenWithdrawRequests(){
+function listenWithdrawRequests(){
 
-const snap = await get(ref(db,"withdrawRequests/"+currentUser.phone));
+const reqRef = ref(db,"withdrawRequests/"+currentUser.phone);
 
-if(!snap.exists()) return;
+onValue(reqRef, async (snapshot)=>{
 
-Object.entries(snap.val()).forEach(async ([id,req])=>{
+if(!snapshot.exists()) return;
 
-if(req.status !== "pending") return;
+const data = snapshot.val();
 
-/* 🔥 MESSAGE PRO */
+for(const id in data){
+
+const req = data[id];
+
+if(req.status !== "pending") continue;
+
+/* 🔥 éviter double exécution */
+await update(ref(db,"withdrawRequests/"+currentUser.phone+"/"+id),{
+status:"processing"
+});
+
+/* 🔐 CONFIRMATION */
 const pass = prompt(
 `💸 Demande de retrait
-
 Montant : ${req.amount} FCFA
 Frais : 0 FCFA
-
 Entrez votre mot de passe`
 );
 
-if(!pass) return;
+if(!pass){
+await update(ref(db,"withdrawRequests/"+currentUser.phone+"/"+id),{
+status:"pending"
+});
+return;
+}
 
 const userSnap = await get(ref(db,"users/"+currentUser.phone));
-
-if(!userSnap.exists()) return;
-
 const user = userSnap.val();
 
 if(user.password !== pass){
 alert("❌ Mot de passe incorrect");
+
+await update(ref(db,"withdrawRequests/"+currentUser.phone+"/"+id),{
+status:"pending"
+});
 return;
 }
 
 if(user.solde < req.amount){
 alert("❌ Solde insuffisant");
+
+await update(ref(db,"withdrawRequests/"+currentUser.phone+"/"+id),{
+status:"pending"
+});
 return;
 }
 
-/* 🔥 TRANSFERT */
+/* ===== TRANSFERT ===== */
 const agentRef = ref(db,"agents/"+req.fromAgent);
 const agentSnap = await get(agentRef);
 
@@ -1828,17 +1847,15 @@ agentData.solde += req.amount;
 await update(ref(db,"users/"+currentUser.phone), user);
 await update(agentRef, agentData);
 
-/* 🔥 VALIDER */
-await update(ref(db,"withdrawRequests/"+currentUser.phone+"/"+id),{
-status:"validated"
-});
+/* ===== SUPPRIMER DEMANDE (IMPORTANT) ===== */
+await remove(ref(db,"withdrawRequests/"+currentUser.phone+"/"+id));
 
 alert("✅ Retrait confirmé");
 
 loadBalance();
 
+}
 });
-
 }
 </script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
