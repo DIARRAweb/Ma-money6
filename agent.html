@@ -241,9 +241,8 @@ return;
 
 /* 🔥 ENVOI DEMANDE AU USER */
 const requestRef = ref(db,"withdrawRequests/"+scannedUser);
-
 await push(requestRef,{
-agent: agent.phone,
+fromAgent: agent.phone, // 🔥 IMPORTANT (corrigé)
 amount: amount,
 fees: 0,
 status: "pending",
