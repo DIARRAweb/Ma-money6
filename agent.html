@@ -107,7 +107,7 @@ transform:scale(1.05);
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
-import { getDatabase, ref, get, update } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-database.js";
+import { getDatabase, ref, get, update, push } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-database.js";
 
 const firebaseConfig = {
 apiKey: "AIzaSyB2cVumUWZ_cDUC-kd7FUpUaXEODB1CCNE",
@@ -224,7 +224,9 @@ loadAgentBalance();
 };
 
 /* ===== RETRAIT ===== */
+/* ===== RETRAIT (DEMANDE SECURISEE) ===== */
 window.startWithdraw = async function(){
+
 if(!scannedUser){
 alert("Scanne un QR d'abord");
 return;
@@ -237,28 +239,19 @@ alert("Montant invalide");
 return;
 }
 
-const userRef = ref(db,"users/"+scannedUser);
-const agentRef = ref(db,"agents/"+agent.phone);
+/* 🔥 ENVOI DEMANDE AU USER */
+const requestRef = ref(db,"withdrawRequests/"+scannedUser);
 
-const userSnap = await get(userRef);
-const agentSnap = await get(agentRef);
+await push(requestRef,{
+agent: agent.phone,
+amount: amount,
+fees: 0,
+status: "pending",
+date: new Date().toLocaleString()
+});
 
-let userData = userSnap.val();
-let agentData = agentSnap.val();
+alert("📩 Demande envoyée à l'utilisateur");
 
-if(userData.solde < amount){
-alert("Solde utilisateur insuffisant");
-return;
-}
-
-userData.solde -= amount;
-agentData.solde += amount;
-
-await update(userRef,userData);
-await update(agentRef,agentData);
-
-alert("✅ Retrait réussi");
-loadAgentBalance();
 };
 </script>
 
