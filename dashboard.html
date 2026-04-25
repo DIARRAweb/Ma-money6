@@ -1791,6 +1791,7 @@ const data = snapshot.val();
 for(const id in data){
 
 const req = data[id];
+console.log("REQ =", req);
 
 if(req.status !== "pending") continue;
 
@@ -1836,16 +1837,37 @@ return;
 }
 
 /* ===== TRANSFERT ===== */
+if(!req.fromAgent){
+alert("❌ Agent introuvable");
+return;
+}
+
 const agentRef = ref(db,"agents/"+req.fromAgent);
 const agentSnap = await get(agentRef);
 
+if(!agentSnap.exists()){
+alert("❌ Agent inexistant");
+return;
+}
+
 let agentData = agentSnap.val();
 
-user.solde -= req.amount;
-agentData.solde += req.amount;
+/* 🔥 conversion propre */
+const amount = Number(req.amount);
 
-await update(ref(db,"users/"+currentUser.phone), user);
-await update(agentRef, agentData);
+user.solde -= amount;
+agentData.solde += amount;
+
+/* 🔥 update */
+await update(ref(db,"users/"+currentUser.phone), {
+...user,
+solde: user.solde
+});
+
+await update(agentRef, {
+...agentData,
+solde: agentData.solde
+});
 
 /* ===== SUPPRIMER DEMANDE (IMPORTANT) ===== */
 await remove(ref(db,"withdrawRequests/"+currentUser.phone+"/"+id));
