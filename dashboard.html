@@ -279,7 +279,10 @@ opacity: 0.9;
 /* ===== STYLE 3 ===== */
 
 .main-card {
-background: linear-gradient(135deg, #ff512f, #dd2476);
+background: linear-gradient(270deg,#ff512f,#ff9966,#ff3d00,#ff6a00);
+background-size: 600% 600%;
+animation: gradientMove 8s ease infinite;
+
 color: white;
 padding: 25px;
 border-radius: 25px;
@@ -290,6 +293,13 @@ margin-bottom: 20px;
 box-shadow: 0 20px 40px rgba(0,0,0,0.3);
 position: relative;
 overflow: hidden;
+}
+
+/* ✨ animation */
+@keyframes gradientMove {
+0%{background-position:0% 50%;}
+50%{background-position:100% 50%;}
+100%{background-position:0% 50%;}
 }
 
 .main-card h1 {
@@ -828,6 +838,8 @@ Envoyer
 
 </div>
 
+<audio id="notifSound" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg"></audio>
+
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
 import { getDatabase, ref, get, update, push, remove, onValue } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js";
@@ -930,31 +942,37 @@ return null;
 
 function formatMoney(a){ return Number(a).toLocaleString("fr-FR"); }
 
-async function loadBalance(){
-  const snap = await get(ref(db,"users/"+currentUser.phone));
+function listenBalance(){
 
-  if(snap.exists()){
-    currentUser = snap.val();
-    localStorage.setItem("loggedUser", JSON.stringify(currentUser));
+const userRef = ref(db,"users/"+currentUser.phone);
 
-    const cur = getCurrency(currentUser.phone);
-    if(localStorage.getItem("balanceVisible") === "false"){
-      soldeBox.innerText = "••••••••";
-      }else{
-      soldeBox.innerText = formatMoney(currentUser.solde) + " " + cur.symbol;
-      }
+onValue(userRef,(snap)=>{
 
-    // 🔥 PHOTO PROFIL
-    let photoUrl = currentUser.photo
-      ? currentUser.photo
-      : "https://i.imgur.com/6VBx3io.png";
+if(snap.exists()){
 
-      profilePic.src = photoUrl;
-      menuProfilePic.src = photoUrl;
-      menuUserName.innerText = currentUser.name;
-  }
+currentUser = snap.val();
+localStorage.setItem("loggedUser", JSON.stringify(currentUser));
+
+const cur = getCurrency(currentUser.phone);
+
+if(localStorage.getItem("balanceVisible") === "false"){
+soldeBox.innerText = "••••••••";
+}else{
+soldeBox.innerText = formatMoney(currentUser.solde) + " " + cur.symbol;
 }
-loadBalance();
+
+/* 🔥 photo */
+let photoUrl = currentUser.photo || "https://i.imgur.com/6VBx3io.png";
+profilePic.src = photoUrl;
+menuProfilePic.src = photoUrl;
+menuUserName.innerText = currentUser.name;
+
+}
+
+});
+
+}
+listenBalance();
 
 /* 🔄 synchroniser bouton */
 const toggleBtn = document.getElementById("toggleBalance");
@@ -1282,45 +1300,40 @@ setInterval(processScheduledTransfers,5000);
 
 window.sendClaim = async function(txId){
 
-const historySnap = await get(ref(db,"history/"+txId));
-if(!historySnap.exists()){
+const historyRef = ref(db,"history/"+currentUser.phone);
+const snap = await get(historyRef);
+
+if(!snap.exists()){
 alert("Transaction introuvable");
 return;
 }
 
-const tx = historySnap.val();
+let tx = null;
 
-/* Vérifier si déjà réclamé */
+/* 🔥 chercher la transaction */
+Object.entries(snap.val()).forEach(([id,data])=>{
+if(id === txId){
+tx = data;
+}
+});
 
-if(tx.claimRequested){
-alert("Réclamation déjà envoyée.");
+if(!tx){
+alert("Transaction introuvable");
 return;
 }
 
-const claimData = {
+/* 🔥 envoyer réclamation */
+await push(ref(db,"serviceClaims"),{
 txId: txId,
 from: tx.from,
 to: tx.to,
-amountOriginal: tx.amountOriginal,
-amountConverted: tx.amountConverted,
-fee: tx.fee,
-reason: tx.reason || "",
+amount: tx.amountOriginal,
 date: tx.date,
-status: "pending",
-createdAt: Date.now()
-};
-
-/* Envoyer au service */
-
-await push(ref(db,"serviceClaims"), claimData);
-
-/* Marquer transaction */
-
-await update(ref(db,"history/"+txId),{
-claimRequested:true
+status:"pending"
 });
 
-alert("Votre réclamation a été envoyée au service.");
+alert("✅ Réclamation envoyée");
+
 };
 
 /* ===== NOTIFICATIONS ===== */
@@ -1982,6 +1995,9 @@ loadBalance();
 
 function showToast(message){
 
+const sound = document.getElementById("notifSound");
+sound.play();
+
 const toast = document.createElement("div");
 
 toast.innerText = message;
@@ -2003,6 +2019,7 @@ animation:slideUp 0.4s ease;
 document.body.appendChild(toast);
 
 setTimeout(()=>toast.remove(),3000);
+
 }
 </script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
