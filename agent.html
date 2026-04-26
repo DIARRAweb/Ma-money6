@@ -218,6 +218,25 @@ userData.solde += amount;
 
 await update(userRef,userData);
 await update(agentRef,agentData);
+/* 🔥 HISTORIQUE USER */
+await push(ref(db,"history/"+scannedUser),{
+from: agent.phone,
+to: scannedUser,
+amountOriginal: amount,
+date: new Date().toLocaleString(),
+type:"deposit"
+});
+
+/* 🔥 HISTORIQUE AGENT */
+await push(ref(db,"history/"+agent.phone),{
+from: agent.phone,
+to: scannedUser,
+amountOriginal: amount,
+date: new Date().toLocaleString(),
+type:"deposit"
+});
+
+
 await push(ref(db,"notifications/"+scannedUser),{
 title:"💰 Dépôt reçu",
 phone: agent.phone,
@@ -232,6 +251,14 @@ phone: scannedUser,
 amount: amount,
 date: new Date().toLocaleString(),
 seen:false
+});
+
+await push(ref(db,"history/"+scannedUser),{
+from: agent.phone,
+to: scannedUser,
+amountOriginal: amount,
+date: new Date().toLocaleString(),
+type:"deposit"
 });
 
 alert("✅ Dépôt réussi");
